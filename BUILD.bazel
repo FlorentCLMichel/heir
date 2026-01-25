@@ -5,7 +5,7 @@ load("@rules_license//rules:license.bzl", "license")
 # copybara: fuzztest_ci
 
 package(
-    default_applicable_licenses = ["@heir//:license"],
+    default_applicable_licenses = [":license"],
     default_visibility = ["//visibility:public"],
 )
 
@@ -68,4 +68,18 @@ config_setting(
     flag_values = {
         ":enable_yosys": "0",
     },
+)
+
+# OpenFHE interpreter
+string_flag(
+    name = "openfhe_enable_timing",
+    build_setting_default = "0",
+)
+
+config_setting(
+    name = "config_openfhe_enable_timing",
+    flag_values = {
+        ":openfhe_enable_timing": "1",
+    },
+    visibility = ["//visibility:public"],
 )

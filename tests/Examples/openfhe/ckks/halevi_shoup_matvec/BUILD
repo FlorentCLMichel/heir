@@ -8,18 +8,21 @@ openfhe_end_to_end_test(
     heir_opt_flags = [
         "--annotate-module=backend=openfhe scheme=ckks",
         "--torch-linalg-to-ckks=ciphertext-degree=8192",
-        "--scheme-to-openfhe=insert-debug-handler-calls=true",
+        "--scheme-to-openfhe",
     ],
     heir_translate_flags = [
         "--openfhe-include-type=source-relative",
     ],
     mlir_src = "@heir//tests/Examples/common:matvec.mlir",
-    tags = ["notap"],
     test_src = "halevi_shoup_matvec_test.cpp",
 )
 
 openfhe_interpreter_test(
     name = "halevi_shoup_matvec_interpreter_test",
+    copts = select({
+        "@heir//:config_openfhe_enable_timing": ["-DOPENFHE_ENABLE_TIMING"],
+        "//conditions:default": [],
+    }),
     generated_heir_opt_filename = "module.openfhe.mlir",
     heir_opt_flags = [
         "--annotate-module=backend=openfhe scheme=ckks",

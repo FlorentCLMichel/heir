@@ -22,7 +22,6 @@ heir_benchmark_test(
     test_src = ["ntt_benchmark_test.cc"],
     deps = [
         "@google_benchmark//:benchmark_main",
-        "@googletest//:gtest",
         "@heir//tests/Examples/benchmark:Memref",
     ],
 )

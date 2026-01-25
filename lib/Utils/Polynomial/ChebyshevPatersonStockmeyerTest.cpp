@@ -3,6 +3,7 @@
 #include "gtest/gtest.h"  // from @googletest
 #include "lib/Kernel/AbstractValue.h"
 #include "lib/Utils/Polynomial/ChebyshevPatersonStockmeyer.h"
+#include "lib/Utils/Polynomial/ChebyshevPatersonStockmeyerTestUtils.h"
 #include "lib/Utils/Polynomial/PolynomialTestVisitors.h"
 
 namespace mlir {
@@ -10,22 +11,23 @@ namespace heir {
 namespace polynomial {
 namespace {
 
-double evalChebyshevPolynomial(double x, std::vector<double> coefficients) {
-  kernel::LiteralDouble x_node = x;
-  auto result_node =
-      patersonStockmeyerChebyshevPolynomialEvaluation(x_node, coefficients);
+double evalChebyshevPolynomial(double x,
+                               const std::vector<double>& coefficients) {
+  kernel::LiteralDouble xNode = x;
+  auto resultNode =
+      patersonStockmeyerChebyshevPolynomialEvaluation(xNode, coefficients);
 
   test::EvalVisitor visitor;
-  return result_node->visit(visitor);
+  return resultNode->visit(visitor);
 }
 
-int evalMultiplicativeDepth(double x, std::vector<double> coefficients) {
-  kernel::LiteralDouble x_node = x;
-  auto result_node =
-      patersonStockmeyerChebyshevPolynomialEvaluation(x_node, coefficients);
+int evalMultiplicativeDepth(double x, const std::vector<double>& coefficients) {
+  kernel::LiteralDouble xNode = x;
+  auto resultNode =
+      patersonStockmeyerChebyshevPolynomialEvaluation(xNode, coefficients);
 
   test::MultiplicativeDepthVisitor visitor;
-  return static_cast<int>(result_node->visit(visitor));
+  return static_cast<int>(resultNode->visit(visitor));
 }
 
 TEST(PatersonStockmeyerChebyshevPolynomialEvaluation, ConstantPolynomial) {
@@ -82,7 +84,65 @@ TEST(PatersonStockmeyerChebyshevPolynomialEvaluation,
       0.0038349915376337043};
   EXPECT_NEAR(evalChebyshevPolynomial(0.7, coefficients), 0.7013677694556697,
               1e-14);
-  EXPECT_EQ(evalMultiplicativeDepth(0.5, coefficients), 6);
+  EXPECT_EQ(evalMultiplicativeDepth(0.5, coefficients), 5);
+}
+
+TEST(PatersonStockmeyerChebyshevPolynomialEvaluation, FuzzRegression) {
+  std::vector<double> coefficients = {-1.0235735354053155,
+                                      -2.2239484034011845,
+                                      3.3596813422613554,
+                                      -5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      1.,
+                                      1.,
+                                      1.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      5.,
+                                      -4.0266936185390927,
+                                      -2.0404880230502203,
+                                      -4.158869882243228,
+                                      0.23550099143286474,
+                                      3.2772971796064798,
+                                      2.6763396056329274,
+                                      -0.057187938738978872,
+                                      3.0901577262702826,
+                                      -3.7516374910141637,
+                                      2.4579798716405419,
+                                      5.,
+                                      1.,
+                                      1.,
+                                      5.,
+                                      -1.,
+                                      5.,
+                                      5.,
+                                      3.9602329271115906,
+                                      -2.3366857708216053,
+                                      -2.4512104403648305,
+                                      1.4767353959010538,
+                                      -0.87946138330468315,
+                                      5.,
+                                      -2.7048255456546197,
+                                      5.,
+                                      3.8427057805265683};
+  double x = 0.99883088232034356;
+  double expected = naiveEvalChebyshevPolynomial(coefficients, x);
+  double actual = evalChebyshevPolynomial(x, coefficients);
+  double tolerance = 1e-11;
+  EXPECT_NEAR(expected, actual, tolerance);
 }
 
 }  // namespace

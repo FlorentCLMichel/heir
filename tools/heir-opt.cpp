@@ -56,10 +56,13 @@
 #include "lib/Pipelines/ArithmeticPipelineRegistration.h"
 #include "lib/Pipelines/BooleanPipelineRegistration.h"
 #include "lib/Pipelines/PipelineRegistration.h"
+#include "lib/Transforms/ActivationCanonicalizations/ActivationCanonicalizations.h"
 #include "lib/Transforms/AddClientInterface/AddClientInterface.h"
 #include "lib/Transforms/AnnotateModule/AnnotateModule.h"
+#include "lib/Transforms/AnnotateMulDepth/AnnotateMulDepth.h"
 #include "lib/Transforms/AnnotateSecretness/AnnotateSecretness.h"
 #include "lib/Transforms/ApplyFolders/ApplyFolders.h"
+#include "lib/Transforms/BooleanVectorizer/BooleanVectorizer.h"
 #include "lib/Transforms/CompareToSignRewrite/CompareToSignRewrite.h"
 #include "lib/Transforms/ConvertIfToSelect/ConvertIfToSelect.h"
 #include "lib/Transforms/ConvertSecretExtractToStaticExtract/ConvertSecretExtractToStaticExtract.h"
@@ -77,6 +80,7 @@
 #include "lib/Transforms/ForwardStoreToLoad/ForwardStoreToLoad.h"
 #include "lib/Transforms/FullLoopUnroll/FullLoopUnroll.h"
 #include "lib/Transforms/GenerateParam/GenerateParam.h"
+#include "lib/Transforms/Halo/Passes.h"
 #include "lib/Transforms/InlineActivations/InlineActivations.h"
 #include "lib/Transforms/LayoutOptimization/InterfaceImpl.h"
 #include "lib/Transforms/LayoutOptimization/LayoutOptimization.h"
@@ -90,7 +94,6 @@
 #include "lib/Transforms/PolynomialApproximation/PolynomialApproximation.h"
 #include "lib/Transforms/PopulateScale/PopulateScale.h"
 #include "lib/Transforms/PropagateAnnotation/PropagateAnnotation.h"
-#include "lib/Transforms/ReluCanonicalizations/ReluCanonicalizations.h"
 #include "lib/Transforms/SecretInsertMgmt/Passes.h"
 #include "lib/Transforms/Secretize/Passes.h"
 #include "lib/Transforms/SelectRewrite/SelectRewrite.h"
@@ -116,7 +119,7 @@
 #include "mlir/include/mlir/Conversion/UBToLLVM/UBToLLVM.h"  // from @llvm-project
 #include "mlir/include/mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h"  // from @llvm-project
 #include "mlir/include/mlir/Dialect/Affine/IR/AffineOps.h"  // from @llvm-project
-#include "mlir/include/mlir/Dialect/Affine/Passes.h"   // from @llvm-project
+#include "mlir/include/mlir/Dialect/Affine/Transforms/Passes.h"  // from @llvm-project
 #include "mlir/include/mlir/Dialect/Arith/IR/Arith.h"  // from @llvm-project
 #include "mlir/include/mlir/Dialect/Arith/Transforms/BufferDeallocationOpInterfaceImpl.h"  // from @llvm-project
 #include "mlir/include/mlir/Dialect/Arith/Transforms/BufferizableOpInterfaceImpl.h"  // from @llvm-project
@@ -274,7 +277,7 @@ int main(int argc, char** argv) {
   registerFullLoopUnrollPasses();
   registerConvertIfToSelectPasses();
   registerCompareToSignRewritePasses();
-  registerReluCanonicalizationsPasses();
+  registerActivationCanonicalizationsPasses();
   registerSelectRewritePasses();
   registerConvertSecretForToStaticForPasses();
   registerConvertSecretWhileToStaticForPasses();
@@ -284,12 +287,15 @@ int main(int argc, char** argv) {
   registerDropUnitDims();
   registerAnnotateModulePasses();
   registerAnnotateSecretnessPasses();
+  registerAnnotateMulDepthPasses();
   registerApplyFoldersPasses();
+  registerBooleanVectorizerPasses();
   registerFoldPlaintextMasksPasses();
   registerForwardInsertSliceToExtractSlicePasses();
   registerForwardInsertToExtractPasses();
   registerForwardStoreToLoadPasses();
   registerGenerateParamPasses();
+  registerHaloPasses();
   registerOperationBalancerPasses();
   registerPopulateScalePasses();
   registerStraightLineVectorizerPasses();
@@ -344,33 +350,36 @@ int main(int argc, char** argv) {
 #endif
 
   // Dialect conversion passes in HEIR
-  mod_arith::registerModArithToArithPasses();
-  mlir::heir::arith::registerArithToModArithPasses();
-  mlir::heir::arith::registerArithToCGGIPasses();
-  mlir::heir::arith::registerArithToCGGIQuartPasses();
-  mod_arith::registerConvertToMacPass();
   bgv::registerBGVToLWEPasses();
   ckks::registerCKKSToLWEPasses();
-  registerSecretToCGGIPasses();
   lwe::registerLWEToLattigoPasses();
   lwe::registerLWEToOpenfhePasses();
   lwe::registerLWEToPolynomialPasses();
-  polynomial::registerPolynomialToModArithPasses();
-  tensor_ext::registerTensorExtToTensorPasses();
-  registerCGGIToJaxitePasses();
-  registerCGGIToTfheRustPasses();
-  registerCGGIToTfheRustBoolPasses();
-  // This comement registers internal passes
-  registerSecretToBGVPasses();
-  registerSecretToCKKSPasses();
+  mlir::heir::arith::registerArithToCGGIPasses();
+  mlir::heir::arith::registerArithToCGGIQuartPasses();
+  mlir::heir::arith::registerArithToModArithPasses();
+  mod_arith::registerConvertToMacPass();
+  mod_arith::registerModArithToArithPasses();
   mod_arith::registerSecretToModArithPasses();
+  polynomial::registerPolynomialToModArithPasses();
+  registerCGGIToJaxitePasses();
+  registerCGGIToTfheRustBoolPasses();
+  registerCGGIToTfheRustPasses();
+  registerSecretToBGVPasses();
+  registerSecretToCGGIPasses();
+  registerSecretToCKKSPasses();
+  tensor_ext::registerTensorExtToTensorPasses();
+
+  // This comement registers internal passes
 
   // Interfaces in HEIR
   secret::registerBufferizableOpInterfaceExternalModels(registry);
   rns::registerExternalRNSTypeInterfaces(registry);
-  registerOperandAndResultAttrInterface(registry);
+  registerIncreasesMulDepthOpInterface(registry);
   registerLayoutConversionHoistableInterface(registry);
+  registerOperandAndResultAttrInterface(registry);
   registerOperandLayoutRequirementOpInterface(registry);
+  registerPlaintextOperandInterface(registry);
 
   PassPipelineRegistration<>(
       "heir-polynomial-to-llvm",

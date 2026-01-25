@@ -1,6 +1,6 @@
 """A macro providing an end-to-end test for OpenFHE codegen."""
 
-load("@heir//bazel/openfhe:copts.bzl", "MAYBE_OPENFHE_LINKOPTS", "MAYBE_OPENMP_COPTS")
+load("@heir//bazel/openfhe:copts.bzl", "OPENMP_COPTS", "OPENMP_LINKOPTS")
 load("@heir//tools:heir-openfhe.bzl", "openfhe_lib")
 load("@heir//tools:heir-opt.bzl", "heir_opt")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -34,12 +34,12 @@ def openfhe_end_to_end_test(name, mlir_src, test_src, generated_lib_header, heir
         ],
         tags = tags,
         data = data,
-        copts = MAYBE_OPENMP_COPTS,
-        linkopts = MAYBE_OPENFHE_LINKOPTS,
+        copts = OPENMP_COPTS,
+        linkopts = OPENMP_LINKOPTS,
         **kwargs
     )
 
-def openfhe_interpreter_test(name, mlir_src, test_src, generated_heir_opt_filename = "", heir_opt_flags = [], data = [], tags = [], deps = [], **kwargs):
+def openfhe_interpreter_test(name, mlir_src, test_src, generated_heir_opt_filename = "", heir_opt_flags = [], data = [], tags = [], deps = [], copts = [], timeout = "moderate", **kwargs):
     """A rule for running generating OpenFHE dialect and exposing it to an interpreter.
 
     Args:
@@ -51,6 +51,8 @@ def openfhe_interpreter_test(name, mlir_src, test_src, generated_heir_opt_filena
       data: Data dependencies to be passed to cc_test/heir_opt
       tags: Tags to pass to cc_test
       deps: Deps to pass to cc_test
+      copts: Additional copts to pass to cc_test
+      timeout: Timeout to pass to cc_test
       **kwargs: Keyword arguments to pass to cc_test.
     """
     heir_opt_name = "%s_heir_opt" % name
@@ -76,9 +78,10 @@ def openfhe_interpreter_test(name, mlir_src, test_src, generated_heir_opt_filena
             # for mlir source file parsing
             "@llvm-project//mlir:Support",
         ],
+        timeout = timeout,
         tags = tags,
         data = data + [":" + generated_heir_opt_filename],
-        copts = MAYBE_OPENMP_COPTS,
-        linkopts = MAYBE_OPENFHE_LINKOPTS,
+        copts = OPENMP_COPTS + copts,
+        linkopts = OPENMP_LINKOPTS,
         **kwargs
     )

@@ -1,6 +1,7 @@
 #include "lib/Transforms/ConvertToCiphertextSemantics/ConvertToCiphertextSemantics.h"
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -674,13 +675,26 @@ struct ConvertLinalgConv2D
         cast<TypedValue<RankedTensorType>>(adaptor.getInputs()[1]);
     SSAValue matrixLeaf(matrix);
 
-    // The original matrix shape is the shape of the expanded filter.
+    // The original matrix shape is the shape of the expanded filter before
+    // diagonalization.
     RankedTensorType expandedMatrixType = get2dConvFilterExpandedType(
         cast<RankedTensorType>(op.getInputs()[1].getType()),
         cast<RankedTensorType>(op.getInputs()[0].getType()), /*padding=*/0);
+
+    // Collect any zero diagonals of the filter matrix.
+    LayoutAttr filterLayout = getLayoutAttr(adaptor.getInputs()[1]);
+    auto filterRelation = filterLayout.getIntegerRelation();
+
+    PointCollector collector;
+    std::map<int, bool> zeroDiagonals;
+    getCtComplementPoints(filterRelation, collector, matrix.getType());
+    for (const auto& point : collector.points) {
+      zeroDiagonals[point[0]] = true;
+    }
+
     std::shared_ptr<ArithmeticDagNode<SSAValue>> implementedKernel =
         implementHaleviShoup(vectorLeaf, matrixLeaf,
-                             expandedMatrixType.getShape());
+                             expandedMatrixType.getShape(), zeroDiagonals);
 
     rewriter.setInsertionPointAfter(op);
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
@@ -787,7 +801,8 @@ static FailureOr<SmallVector<Value>> generateLoopWithDynamicIndexCheck(
              i < relation.getVarKindOffset(VarKind::Range) +
                      relation.getNumRangeVars();
              ++i) {
-          indices.push_back(exprs[i]);
+          indices.push_back(arith::IndexCastOp::create(
+              builder, loc, builder.getIndexType(), exprs[i]));
         }
 
         // If statement to check that the current set of exprs matches
@@ -799,9 +814,11 @@ static FailureOr<SmallVector<Value>> generateLoopWithDynamicIndexCheck(
         int domainStart = relation.getVarKindOffset(VarKind::Domain);
         for (int i = domainStart; i < domainStart + relation.getNumDomainVars();
              ++i) {
-          auto eqOp =
-              arith::CmpIOp::create(b, arith::CmpIPredicate::eq, exprs[i],
-                                    dynamicIndices[i - domainStart]);
+          auto eqOp = arith::CmpIOp::create(
+              b, arith::CmpIPredicate::eq,
+              arith::IndexCastOp::create(builder, loc, builder.getIndexType(),
+                                         exprs[i]),
+              dynamicIndices[i - domainStart]);
           setMaterializedAttr(eqOp);
 
           if (i == domainStart) {
@@ -1318,10 +1335,15 @@ class ConvertTensorInsertLayout
             ValueRange iterArgs) {
           Value curScalarMask = iterArgs[0];
           Value curDestMask = iterArgs[1];
+          SmallVector<Value> slotIndicesAsIndex;
+          for (Value index : slotIndices) {
+            slotIndicesAsIndex.push_back(arith::IndexCastOp::create(
+                builder, loc, builder.getIndexType(), index));
+          }
           auto insertIntoScalarMask = tensor::InsertOp::create(
-              b, scalarMaskValue, curScalarMask, slotIndices);
+              b, scalarMaskValue, curScalarMask, slotIndicesAsIndex);
           auto insertIntoDestMask = tensor::InsertOp::create(
-              b, zeroScalarOp, curDestMask, slotIndices);
+              b, zeroScalarOp, curDestMask, slotIndicesAsIndex);
           setMaterializedAttr({insertIntoScalarMask, insertIntoDestMask});
           SmallVector<Value> results = {insertIntoScalarMask.getResult(),
                                         insertIntoDestMask.getResult()};

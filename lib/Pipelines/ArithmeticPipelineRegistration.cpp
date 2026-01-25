@@ -8,8 +8,9 @@
 #include "lib/Dialect/LWE/Conversions/LWEToLattigo/LWEToLattigo.h"
 #include "lib/Dialect/LWE/Conversions/LWEToOpenfhe/LWEToOpenfhe.h"
 #include "lib/Dialect/LWE/Transforms/AddDebugPort.h"
-#include "lib/Dialect/Lattigo/Transforms/AllocToInplace.h"
+#include "lib/Dialect/Lattigo/Transforms/AllocToInPlace.h"
 #include "lib/Dialect/Lattigo/Transforms/ConfigureCryptoContext.h"
+#include "lib/Dialect/Openfhe/Transforms/AllocToInPlace.h"
 #include "lib/Dialect/Openfhe/Transforms/ConfigureCryptoContext.h"
 #include "lib/Dialect/Openfhe/Transforms/CountAddAndKeySwitch.h"
 #include "lib/Dialect/Openfhe/Transforms/FastRotationPrecompute.h"
@@ -27,8 +28,10 @@
 #include "lib/Dialect/TensorExt/Transforms/InsertRotate.h"
 #include "lib/Dialect/TensorExt/Transforms/RotateAndReduce.h"
 #include "lib/Pipelines/PipelineRegistration.h"
+#include "lib/Transforms/ActivationCanonicalizations/ActivationCanonicalizations.h"
 #include "lib/Transforms/AddClientInterface/AddClientInterface.h"
 #include "lib/Transforms/ApplyFolders/ApplyFolders.h"
+#include "lib/Transforms/BooleanVectorizer/BooleanVectorizer.h"
 #include "lib/Transforms/CompareToSignRewrite/CompareToSignRewrite.h"
 #include "lib/Transforms/ConvertToCiphertextSemantics/ConvertToCiphertextSemantics.h"
 #include "lib/Transforms/DropUnitDims/DropUnitDims.h"
@@ -47,18 +50,17 @@
 #include "lib/Transforms/OptimizeRelinearization/OptimizeRelinearization.h"
 #include "lib/Transforms/PopulateScale/PopulateScale.h"
 #include "lib/Transforms/PropagateAnnotation/PropagateAnnotation.h"
-#include "lib/Transforms/ReluCanonicalizations/ReluCanonicalizations.h"
 #include "lib/Transforms/SecretInsertMgmt/Passes.h"
 #include "lib/Transforms/Secretize/Passes.h"
 #include "lib/Transforms/SelectRewrite/SelectRewrite.h"
 #include "lib/Transforms/SplitPreprocessing/SplitPreprocessing.h"
 #include "lib/Transforms/TensorLinalgToAffineLoops/TensorLinalgToAffineLoops.h"
 #include "lib/Transforms/ValidateNoise/ValidateNoise.h"
-#include "llvm/include/llvm/Support/raw_ostream.h"    // from @llvm-project
-#include "mlir/include/mlir/Dialect/Affine/Passes.h"  // from @llvm-project
-#include "mlir/include/mlir/Pass/PassManager.h"       // from @llvm-project
-#include "mlir/include/mlir/Pass/PassOptions.h"       // from @llvm-project
-#include "mlir/include/mlir/Transforms/Passes.h"      // from @llvm-project
+#include "llvm/include/llvm/Support/raw_ostream.h"  // from @llvm-project
+#include "mlir/include/mlir/Dialect/Affine/Transforms/Passes.h"  // from @llvm-project
+#include "mlir/include/mlir/Pass/PassManager.h"   // from @llvm-project
+#include "mlir/include/mlir/Pass/PassOptions.h"   // from @llvm-project
+#include "mlir/include/mlir/Transforms/Passes.h"  // from @llvm-project
 
 namespace mlir::heir {
 
@@ -151,9 +153,10 @@ void mlirToSecretArithmeticPipelineBuilder(
     OpPassManager& pm, const MlirToRLWEPipelineOptions& options) {
   pm.addPass(createWrapGeneric());
   convertToDataObliviousPipelineBuilder(pm);
-  pm.addPass(createReLUCanonicalizations());
   pm.addPass(createSelectRewrite());
   pm.addPass(createCompareToSignRewrite());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
 
   // Vectorize and optimize rotations
   // TODO(#2320): figure out where this fits in the new pipeline
@@ -441,8 +444,6 @@ BackendPipelineBuilder toOpenFhePipelineBuilder() {
 
     // Convert LWE (and scheme-specific CKKS/BGV ops) to OpenFHE
     pm.addPass(lwe::createLWEToOpenfhe());
-
-    // Simplify, in case the lowering revealed redundancy
     pm.addPass(createCanonicalizerPass());
     pm.addPass(createCSEPass());
 
@@ -454,8 +455,12 @@ BackendPipelineBuilder toOpenFhePipelineBuilder() {
     pm.addPass(
         openfhe::createConfigureCryptoContext(configureCryptoContextOptions));
 
-    // Hoist repeated rotations into EvalFastRotation(Precompute)
     pm.addPass(openfhe::createFastRotationPrecompute());
+    // Vectorize any operations
+    pm.addPass(createBooleanVectorizer());
+    pm.addPass(createCanonicalizerPass());
+    pm.addPass(createCSEPass());
+    pm.addPass(openfhe::createAllocToInPlace());
   };
 }
 
@@ -476,8 +481,8 @@ BackendPipelineBuilder toLattigoPipelineBuilder() {
     // Convert LWE (and scheme-specific BGV ops) to Lattigo
     pm.addPass(lwe::createLWEToLattigo());
 
-    // Convert Alloc Ops to Inplace Ops
-    pm.addPass(lattigo::createAllocToInplace());
+    // Convert Alloc Ops to InPlace Ops
+    pm.addPass(lattigo::createAllocToInPlace());
 
     // Simplify, in case the lowering revealed redundancy
     pm.addPass(createCanonicalizerPass());
@@ -493,8 +498,9 @@ BackendPipelineBuilder toLattigoPipelineBuilder() {
 
 void linalgPreprocessingBuilder(OpPassManager& manager) {
   manager.addPass(createInlineActivations());
-  manager.addPass(createDropUnitDims());
+  manager.addPass(createActivationCanonicalizations());
   manager.addPass(createLinalgCanonicalizations());
+  manager.addPass(createDropUnitDims());
   manager.addPass(createFoldConstantTensors());
   manager.addPass(createCanonicalizerPass());
   manager.addPass(createSymbolDCEPass());

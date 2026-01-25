@@ -52,9 +52,14 @@ cc_library(
         ":ChebyshevDecomposition",
         "@heir//lib/Kernel:AbstractValue",
         "@heir//lib/Kernel:ArithmeticDag",
-        "@heir//lib/Kernel:KernelImplementation",
         "@llvm-project//llvm:Support",
     ],
+)
+
+cc_library(
+    name = "ChebyshevPatersonStockmeyerTestUtils",
+    srcs = ["ChebyshevPatersonStockmeyerTestUtils.cpp"],
+    hdrs = ["ChebyshevPatersonStockmeyerTestUtils.h"],
 )
 
 cc_test(
@@ -62,6 +67,7 @@ cc_test(
     srcs = ["ChebyshevPatersonStockmeyerTest.cpp"],
     deps = [
         ":ChebyshevPatersonStockmeyer",
+        ":ChebyshevPatersonStockmeyerTestUtils",
         ":PolynomialTestVisitors",
         "@googletest//:gtest_main",
         "@heir//lib/Kernel:AbstractValue",
@@ -115,5 +121,18 @@ cc_test(
         "@googletest//:gtest_main",
         "@heir//lib/Kernel:AbstractValue",
         "@heir//lib/Kernel:ArithmeticDag",
+    ],
+)
+
+cc_test(
+    name = "ChebyshevPatersonStockmeyerFuzzTest",
+    srcs = ["ChebyshevPatersonStockmeyerFuzzTest.cpp"],
+    deps = [
+        ":ChebyshevPatersonStockmeyer",
+        ":ChebyshevPatersonStockmeyerTestUtils",
+        ":PolynomialTestVisitors",
+        "@fuzztest//fuzztest",
+        "@googletest//:gtest_main",
+        "@heir//lib/Kernel:AbstractValue",
     ],
 )

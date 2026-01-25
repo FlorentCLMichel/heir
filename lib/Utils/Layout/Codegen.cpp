@@ -2,11 +2,10 @@
 
 #include <cassert>
 #include <cstdlib>
-#include <map>
 #include <string>
-#include <utility>
 
 #include "lib/Utils/Layout/IslConversion.h"
+#include "lib/Utils/Utils.h"
 #include "mlir/include/mlir/Analysis/Presburger/IntegerRelation.h"  // from @llvm-project
 #include "mlir/include/mlir/Dialect/Arith/IR/Arith.h"  // from @llvm-project
 #include "mlir/include/mlir/Dialect/SCF/IR/SCF.h"      // from @llvm-project
@@ -174,7 +173,7 @@ Value buildIslExpr(isl_ast_expr* expr, std::map<std::string, Value> ivToValue,
       isl_val* val = isl_ast_expr_get_val(expr);
       auto intValue = isl_val_get_num_si(val);
       isl_val_free(val);
-      return arith::ConstantIndexOp::create(b, intValue);
+      return arith::ConstantIntOp::create(b, intValue, 32);
     }
     case isl_ast_expr_op: {
       // ISL operations types are defined in
@@ -203,22 +202,30 @@ Value buildIslExpr(isl_ast_expr* expr, std::map<std::string, Value> ivToValue,
         // Unary op
         SmallVector<Value> args = getArgs(expr);
         auto op = arith::SubIOp::create(
-            b, b.getLoc(), arith::ConstantIndexOp::create(b, 0), args[0]);
+            b, b.getLoc(), arith::ConstantIntOp::create(b, 0, 32), args[0]);
         return op->getResult(0);
       }
 
       if (islCmpToMlirAttr.contains(type)) {
         // Comparison ops
         SmallVector<Value> args = getArgs(expr);
+
+        // Sometimes the result of a cmpi op is subsequently checked to be 0 or
+        // 1, so we have to be careful to ensure the argument types are the
+        // correct widths and extend if not.
+        if (!allTypesMatch(args)) {
+          args = extendToCommonWidth(b, args);
+        }
+
         auto op =
             arith::CmpIOp::create(b, islCmpToMlirAttr[type], args[0], args[1]);
-        return op->getResult(0);
-      }
-
-      if (type == isl_ast_op_select) {
+        auto indexCastOp = arith::IndexCastOp::create(b, b.getIndexType(), op);
+        return indexCastOp->getResult(0);
+      } else if (type == isl_ast_op_select) {
         // Select op
         SmallVector<Value> args = getArgs(expr);
-        auto op = arith::SelectOp::create(b, args[0], args[1], args[2]);
+        auto condI1 = arith::IndexCastOp::create(b, b.getI1Type(), args[0]);
+        auto op = arith::SelectOp::create(b, condI1, args[1], args[2]);
         return op->getResult(0);
       }
 
@@ -226,8 +233,9 @@ Value buildIslExpr(isl_ast_expr* expr, std::map<std::string, Value> ivToValue,
         // Remainder op with comparison to zero
         SmallVector<Value> args = getArgs(expr);
         auto op = arith::RemSIOp::create(b, args[0], args[1]);
-        auto eqOp = arith::CmpIOp::create(b, arith::CmpIPredicate::eq, op,
-                                          arith::ConstantIndexOp::create(b, 0));
+        auto eqOp =
+            arith::CmpIOp::create(b, arith::CmpIPredicate::eq, op,
+                                  arith::ConstantIntOp::create(b, 0, 32));
         return eqOp->getResult(0);
       }
       isl_ast_expr_op_type opType = isl_ast_expr_get_op_type(expr);
@@ -266,7 +274,7 @@ FailureOr<scf::ValueVector> MLIRLoopNestGenerator::visitAstNodeFor(
   isl_ast_expr* condUpper = isl_ast_expr_get_op_arg(cond, 1);
   Value ubVal = arith::AddIOp::create(
       builder_, currentLoc_, buildIslExpr(condUpper, ivToValue_, builder_),
-      arith::ConstantIndexOp::create(builder_, currentLoc_, 1));
+      arith::ConstantIntOp::create(builder_, currentLoc_, 1, 32));
   isl_ast_expr_free(condUpper);
   isl_ast_expr_free(cond);
 
@@ -317,9 +325,12 @@ FailureOr<scf::ValueVector> MLIRLoopNestGenerator::visitAstNodeIf(
   isl_ast_expr_free(cond);
 
   // Build scf if operation with the result types of the iter args
-  auto ifOp =
-      scf::IfOp::create(builder_, currentLoc_, TypeRange(currentIterArgs_),
-                        condVal, /*addThenBlock=*/true, /*addElseBlock=*/true);
+  // Convert condVal to an i1
+  auto condValI1 =
+      arith::IndexCastOp::create(builder_, builder_.getI1Type(), condVal);
+  auto ifOp = scf::IfOp::create(builder_, currentLoc_,
+                                TypeRange(currentIterArgs_), condValI1,
+                                /*addThenBlock=*/true, /*addElseBlock=*/true);
 
   // TODO:(#2120): Handle ISL else conditions.
   isl_ast_node* elseNode = isl_ast_node_if_get_else_node(node);

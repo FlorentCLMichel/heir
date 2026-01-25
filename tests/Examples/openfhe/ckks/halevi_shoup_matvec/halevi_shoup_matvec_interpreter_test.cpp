@@ -58,12 +58,17 @@ TEST(MatmulInterpreterTest, RunTest) {
   TypedCppValue outputEncrypted =
       interpreter.interpret("matvec", {cc, arg0Enc})[0];
 
+#ifdef OPENFHE_ENABLE_TIMING
+  interpreter.printTimingResults();
+#endif
+
   TypedCppValue actualVal =
       interpreter.interpret("matvec__decrypt__result0",
                             {cc, outputEncrypted, TypedCppValue(secretKey)})[0];
-  std::vector<float> actual = std::get<std::vector<float>>(actualVal.value);
+  std::shared_ptr<std::vector<float>> actual =
+      std::get<std::shared_ptr<std::vector<float>>>(actualVal.value);
 
-  EXPECT_NEAR(expected, actual.front(), 1e-6);
+  EXPECT_NEAR(expected, actual->front(), 1e-6);
 }
 
 }  // namespace openfhe

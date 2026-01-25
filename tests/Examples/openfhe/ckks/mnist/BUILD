@@ -26,9 +26,9 @@ py_test(
     size = "enormous",
     srcs = ["mnist_test.py"],
     data = [
-        "data/t10k-images-idx3-ubyte",
-        "data/t10k-labels-idx1-ubyte",
-        "data/traced_model.pt",
+        "@heir//tests/Examples/openfhe/ckks/mnist/data:t10k-images-idx3-ubyte",
+        "@heir//tests/Examples/openfhe/ckks/mnist/data:t10k-labels-idx1-ubyte",
+        "@heir//tests/Examples/openfhe/ckks/mnist/data:traced_model.pt",
     ],
     main = "mnist_test.py",
     tags = [
@@ -37,7 +37,7 @@ py_test(
     ],
     deps = [
         ":mnist_openfhe_pybind",
-        "@com_google_absl_py//absl/testing:absltest",
+        "@abseil-py//absl/testing:absltest",
         "@heir_pip_deps//numpy",
         "@heir_pip_deps//torch",
     ],
